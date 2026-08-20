@@ -10,9 +10,12 @@ REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379")
 class ConnectionManager:
     def __init__(self):
         self.active_connections: List[WebSocket] = []
-        # Connect to Redis
-        self.redis = redis.from_url(REDIS_URL, decode_responses=True)
-        self.pubsub = self.redis.pubsub()
+        if REDIS_URL != "memory":
+            self.redis = redis.from_url(REDIS_URL, decode_responses=True)
+            self.pubsub = self.redis.pubsub()
+        else:
+            self.redis = None
+            self.pubsub = None
 
     async def connect(self, websocket: WebSocket):
         await websocket.accept()
@@ -29,6 +32,8 @@ class ConnectionManager:
                 pass
 
     async def listen_to_redis(self):
+        if REDIS_URL == "memory":
+            return
         await self.pubsub.subscribe("kitchen_updates")
         async for message in self.pubsub.listen():
             if message["type"] == "message":
@@ -36,6 +41,9 @@ class ConnectionManager:
                 await self.broadcast(data)
 
     async def publish_update(self, data: dict):
-        await self.redis.publish("kitchen_updates", json.dumps(data))
+        if REDIS_URL == "memory":
+            await self.broadcast(json.dumps(data))
+        else:
+            await self.redis.publish("kitchen_updates", json.dumps(data))
 
 manager = ConnectionManager()
